@@ -6,13 +6,21 @@ import TweetReader._
 class Tweet(val user: String, val text: String, val retweets: Int) {
   override def toString: String =
     user + " '" + text + "' (" + retweets + ")"
+  def contains(keyword: String): Boolean = text.contains(keyword)
+  def containsAny(keywords: List[String]): Boolean = {
+    if (keywords.isEmpty) return false
+    contains(keywords.head) || containsAny(keywords.tail)
+  }
 }
 
 abstract class TweetSet {
 
+  def isEmpty: Boolean
   def filter(p: Tweet => Boolean): TweetSet = this.filterAcc(p, new Empty)
   def filterAcc(p: Tweet => Boolean, acc: TweetSet): TweetSet
   def union(that: TweetSet): TweetSet
+  def head: Tweet
+  def tail: TweetSet
   def mostRetweeted: Tweet
   def descendingByRetweet: TweetList
   def incl(tweet: Tweet): TweetSet
@@ -23,8 +31,11 @@ abstract class TweetSet {
 
 class Empty extends TweetSet {
 
+  def isEmpty: Boolean = true
   def filterAcc(p: Tweet => Boolean, acc: TweetSet): TweetSet = acc
   def union(that: TweetSet): TweetSet = that
+  def head: Tweet = throw new Error("cannot get head of empty set")
+  def tail: TweetSet = throw new Error("cannot get tail of empty set")
   def contains(tweet: Tweet): Boolean = false
   def mostRetweeted: Tweet = null
   def descendingByRetweet: TweetList = Nil
@@ -35,14 +46,22 @@ class Empty extends TweetSet {
 
 class NonEmpty(elem: Tweet, left: TweetSet, right: TweetSet) extends TweetSet {
 
+  def isEmpty: Boolean = false
+
   def filterAcc(p: Tweet => Boolean, acc: TweetSet): TweetSet = {
     val children = left.filterAcc(p, acc).union(right.filterAcc(p, acc))
     if (p(elem)) children.incl(elem)
     else children
   }
 
-  def union(that: TweetSet): TweetSet =
-    this.left.union(this.right).union(that).incl(elem)
+  def union(that: TweetSet): TweetSet = {
+    if (that.isEmpty) this
+    else this.incl(that.head).union(that.tail)
+  }
+
+  def head: Tweet = if (left.isEmpty) elem else left.head
+
+  def tail: TweetSet = remove(head)
 
   def contains(x: Tweet): Boolean =
     if (x.text < elem.text) left.contains(x)
@@ -110,22 +129,27 @@ class Cons(val head: Tweet, val tail: TweetList) extends TweetList {
   override def toString = head.user + ", " + tail
 }
 
-
 object GoogleVsApple {
   val google = List("android", "Android", "galaxy", "Galaxy", "nexus", "Nexus")
   val apple = List("ios", "iOS", "iphone", "iPhone", "ipad", "iPad")
 
-  lazy val googleTweets: TweetSet = ???
-  lazy val appleTweets: TweetSet = ???
+  lazy val googleTweets: TweetSet = findTweets(google)
+  lazy val appleTweets: TweetSet = findTweets(apple)
+
+  def findTweets(keywords: List[String]): TweetSet = {
+    val all = TweetReader.allTweets
+    all.filter( (t: Tweet) => t.containsAny(keywords) )
+  }
 
   /**
    * A list of all tweets mentioning a keyword from either apple or google,
    * sorted by the number of retweets.
    */
-  lazy val trending: TweetList = ???
+  lazy val trending: TweetList = googleTweets.union(appleTweets).descendingByRetweet
 }
 
 object Main extends App {
   // Print the trending tweets
+  println("Running GoogleVsApple...")
   GoogleVsApple.trending foreach println
 }
